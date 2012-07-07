@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"path/filepath"
 	"html/template"
+	"sort"
 )
 
 func filesize(bytes int64) string {
@@ -28,7 +29,7 @@ var template_funcs = template.FuncMap{
 }
 
 func get_files_and_dirs(path string) DirectoryListing {
-	var files, dirs []os.FileInfo
+	var files, dirs FileInfoSlice
 	d, _ := os.Open(path)
 	defer d.Close()
 	fi, _ := d.Readdir(-1)
@@ -39,6 +40,8 @@ func get_files_and_dirs(path string) DirectoryListing {
 			dirs = append(dirs, fi)
 		}
 	}
+	files.Sort()
+	dirs.Sort()
 	return DirectoryListing{Dirs: dirs, Files: files}
 }
 
@@ -57,9 +60,15 @@ func serve_index_html_if_exists(w http.ResponseWriter, r *http.Request, path str
 var working_dir string
 var tpl *template.Template
 
+type FileInfoSlice []os.FileInfo
+func (p FileInfoSlice) Len() int           { return len(p) }
+func (p FileInfoSlice) Less(i, j int) bool { return p[i].Name() < p[j].Name() }
+func (p FileInfoSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func (p FileInfoSlice) Sort()              { sort.Sort(p) }
+
 type DirectoryListing struct {
-	Dirs []os.FileInfo
-	Files []os.FileInfo
+	Dirs FileInfoSlice
+	Files FileInfoSlice
 }
 
 func handle_req(w http.ResponseWriter, req *http.Request) {
@@ -100,10 +109,12 @@ func main() {
 
 	port := flag.Int("p", default_port, "port, default - environment variable PORT or 80, if not set")
 	ip := flag.String("i", "0.0.0.0", "interface address, default - 0.0.0.0")
-	flag.StringVar(&working_dir, "d", "", "if not specified serves from current working dir")
+	flag.StringVar(&working_dir, "d", cwd, "if not specified serves from current working dir")
 	flag.Parse()
 
-	working_dir = filepath.Join(cwd, working_dir)
+	if working_dir != cwd {
+		working_dir = filepath.Join(cwd, working_dir)
+	}
 
 	addr := fmt.Sprintf("%s:%d", *ip, *port)
 
